@@ -1,0 +1,1 @@
+ALTER TABLE "verification" ALTER COLUMN "id" TYPE TEXT;

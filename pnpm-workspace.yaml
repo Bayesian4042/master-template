@@ -1,0 +1,21 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@prisma/engines': false
+  '@scarf/scarf': false
+  '@swc/core': false
+  esbuild: false
+  lefthook: false
+  msgpackr-extract: false
+  prisma: false
+  sharp: true
+  unrs-resolver: false
+minimumReleaseAgeExclude:
+  - '@heizen-labs/secrets-sdk'
+catalog:
+  typescript: '^5.9.3'
+overrides:
+  zod: ^4.6.7
+  deepmerge-ts@<8.0.0: ^8.0.0
+  mysql2@<3.22.0: ^3.22.0

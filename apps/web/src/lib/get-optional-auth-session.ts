@@ -1,0 +1,14 @@
+import { headers } from "next/headers";
+import { authClient } from "@/lib/auth-client";
+
+export async function getOptionalAuthSession() {
+	try {
+		return await authClient.getSession({
+			fetchOptions: {
+				headers: await headers(),
+			},
+		});
+	} catch {
+		return { data: null };
+	}
+}

@@ -1,0 +1,98 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: codebuild-org-gha-runner-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      # Full history so gitleaks can walk the commit range.
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11.5.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Audit dependencies
+        run: pnpm audit --prod --audit-level critical
+
+      - name: Scan for secrets (gitleaks)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # An all-zero "before" only happens on the push that creates main (feature
+          # branches arrive as PRs with a real base). Scan HEAD alone there: repos made
+          # from this template start as one squashed commit, and a full-history scan
+          # would fail on this template's own past findings.
+          if [ -z "${BASE_SHA//0/}" ]; then RANGE="-1 ${HEAD_SHA}"; else RANGE="${BASE_SHA}..${HEAD_SHA}"; fi
+          pnpm gitleaks git --redact --verbose --log-opts="${RANGE}" .
+
+      - name: Create server .env
+        env:
+          HEIZEN_STUDIO_API_KEY: ${{ secrets.HEIZEN_STUDIO_API_KEY }}
+          HEIZEN_STUDIO_PROJECT_ID: master-template-l6d8lp8bz
+          HEIZEN_STUDIO_ENVIRONMENT_NAME: server-local
+        run: |
+          cat > apps/server/.env << EOF
+          HEIZEN_STUDIO_API_KEY=${HEIZEN_STUDIO_API_KEY}
+          HEIZEN_STUDIO_PROJECT_ID=${HEIZEN_STUDIO_PROJECT_ID}
+          HEIZEN_STUDIO_ENVIRONMENT_NAME=${HEIZEN_STUDIO_ENVIRONMENT_NAME}
+          EOF
+
+      - name: Run linting
+        run: pnpm db:generate
+
+      - name: Run Package
+        run: pnpm package
+
+      - name: Check formatting
+        run: pnpm lint
+
+      - name: Check types
+        run: pnpm typecheck
+
+      - name: React Doctor
+        uses: millionco/react-doctor@v2
+
+      - name: Run tests
+        if: github.event_name == 'pull_request'
+        run: pnpm test
+
+      - name: Run tests and post report
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: heizen-labs/unit-test-report-action@v1
+        with:
+          api-key: ${{ secrets.HEIZEN_STUDIO_API_KEY }}
+          apps: |
+            [
+              { "name": "server", "directory": "apps/server" },
+              { "name": "web", "directory": "apps/web" }
+            ]
